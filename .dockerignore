@@ -6,7 +6,11 @@
 .task
 .od
 .ocd
+.tmp
+.vercel
 node_modules
+**/node_modules
+apps/web/.next
 dist
 coverage
 *.log
