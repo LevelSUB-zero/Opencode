@@ -121,9 +121,9 @@ fs.writeFileSync('apps/daemon/dist/origin-validation.js', ovSrc);
 console.log('Patched: openProbePaths + origin-validation');
 "
 
-mkdir -p /data/.od
-chown -R open-design:open-design /data/.od
-exec su -s /bin/sh open-design -c "HOME=/data node apps/daemon/dist/cli.js --no-open"
+mkdir -p /data/.od /data/.local/share/opencode
+chown -R open-design:open-design /data
+exec su -s /bin/sh open-design -c "HOME=/data XDG_DATA_HOME=/tmp node apps/daemon/dist/cli.js --no-open"
 SCRIPT
 RUN chmod +x /entrypoint.sh
 
