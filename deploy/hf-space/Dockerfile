@@ -79,7 +79,7 @@ fs.writeFileSync('apps/web/out/index.html', html);
 
 # Patch the compiled server.js at startup:
 #   1) openProbePaths uses req.originalUrl (req.path is relative to /api mount)
-#   2) Add same-origin trust so the daemon-served frontend skips bearer check
+#   2) Patch origin-validation.js so isLocalSameOrigin trusts same-origin requests
 node -e "
 var fs = require('fs');
 var src = fs.readFileSync('apps/daemon/dist/server.js', 'utf8');
@@ -88,23 +88,15 @@ src = src.replace(
   'if (openProbePaths.has(req.path))\n                return next();',
   'if (openProbePaths.has(req.originalUrl))\n                return next();'
 );
-// 2) Insert isSameOriginRequest before isLoopbackPeerAddress
-var sameOriginFn = 'function isSameOriginRequest(req){var origin=req.get(\"origin\");if(typeof origin===\"string\"&&origin.length>0){try{var u=new URL(origin);if(u.host===req.headers.host)return true}catch{}}var referer=req.get(\"referer\");if(typeof referer===\"string\"&&referer.length>0){try{var u=new URL(referer);if(u.host===req.headers.host)return true}catch{}}return false}function isLoopbackPeerAddress(address) {';
-src = src.replace('function isLoopbackPeerAddress(address) {', sameOriginFn);
-// 3) Add same-origin bypass before 'const auth' (indented 12 spaces)
-src = src.replace(
-  '            if (isLoopbackPeerAddress(req.socket?.remoteAddress))\n                return next();\n            const auth',
-  '            if (isLoopbackPeerAddress(req.socket?.remoteAddress))\n                return next();\n            if (isSameOriginRequest(req))\n                return next();\n            const auth'
-);
 fs.writeFileSync('apps/daemon/dist/server.js', src);
-// 4) Patch origin-validation.js so all isLocalSameOrigin call sites trust same-origin
+// 2) Patch origin-validation.js so all isLocalSameOrigin call sites trust same-origin
 var ovSrc = fs.readFileSync('apps/daemon/dist/origin-validation.js', 'utf8');
 ovSrc = ovSrc.replace(
   'export function isLocalSameOrigin(req, port, env = process.env) {',
-  'export function isLocalSameOrigin(req, port, env = process.env) { var origin=headerValue(req.headers?.origin);if(typeof origin==="string"&&origin.length>0){try{var u=new URL(origin);if(u.host===req.headers.host)return true}catch{}}var ref=headerValue(req.headers?.referer);if(typeof ref==="string"&&ref.length>0){try{var u=new URL(ref);if(u.host===req.headers.host)return true}catch{}}'
+  'export function isLocalSameOrigin(req, port, env = process.env) { var origin=headerValue(req.headers?.origin);if(typeof origin===\"string\"&&origin.length>0){try{var u=new URL(origin);if(u.host===req.headers.host)return true}catch{}}var ref=headerValue(req.headers?.referer);if(typeof ref===\"string\"&&ref.length>0){try{var u=new URL(ref);if(u.host===req.headers.host)return true}catch{}}'
 );
 fs.writeFileSync('apps/daemon/dist/origin-validation.js', ovSrc);
-console.log('Patched: openProbePaths + sameOrigin + origin-validation');
+console.log('Patched: openProbePaths + origin-validation');
 "
 
 mkdir -p /data/.od
