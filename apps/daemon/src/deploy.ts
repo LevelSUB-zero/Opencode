@@ -341,9 +341,24 @@ export async function buildDeployFileSet(projectsRoot: string, projectId: string
   return plan.files;
 }
 
-export async function deployToVercel({ config, files, projectId }: { config: DeployConfig; files: DeployFile[]; projectId: string }) {
+export async function deployToVercel({ config, files, projectId, customDomain }: { config: DeployConfig; files: DeployFile[]; projectId: string; customDomain?: string }) {
   if (!config?.token) {
     throw new DeployError('Vercel token is required.', 400);
+  }
+
+  const body: Record<string, unknown> = {
+    name: safeVercelProjectName(`od-${projectId}`),
+    files: files.map((f) => ({
+      file: f.file,
+      data: Buffer.from(f.data).toString('base64'),
+      encoding: 'base64',
+    })),
+    projectSettings: { framework: null },
+  };
+  // If a custom domain is provided, pass it as an alias target so Vercel
+  // assigns the domain to this deployment automatically.
+  if (typeof customDomain === 'string' && customDomain.trim()) {
+    body.alias = [customDomain.trim()];
   }
 
   const createResp = await fetch(`${VERCEL_API}/v13/deployments${vercelTeamQuery(config)}`, {
@@ -352,15 +367,7 @@ export async function deployToVercel({ config, files, projectId }: { config: Dep
       Authorization: `Bearer ${config.token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      name: safeVercelProjectName(`od-${projectId}`),
-      files: files.map((f) => ({
-        file: f.file,
-        data: Buffer.from(f.data).toString('base64'),
-        encoding: 'base64',
-      })),
-      projectSettings: { framework: null },
-    }),
+    body: JSON.stringify(body),
   });
 
   const created = await readVercelJson(createResp);

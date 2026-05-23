@@ -3,6 +3,7 @@ import { codexAgentDef } from './defs/codex.js';
 import { devinAgentDef } from './defs/devin.js';
 import { geminiAgentDef } from './defs/gemini.js';
 import { opencodeAgentDef } from './defs/opencode.js';
+import { nvidiaNimDef } from './defs/nvidia-nim.js';
 import { hermesAgentDef } from './defs/hermes.js';
 import { grokBuildAgentDef } from './defs/grok-build.js';
 import { kimiAgentDef } from './defs/kimi.js';
@@ -24,6 +25,7 @@ const BASE_AGENT_DEFS: RuntimeAgentDef[] = [
   devinAgentDef,
   geminiAgentDef,
   opencodeAgentDef,
+  nvidiaNimDef,
   hermesAgentDef,
   grokBuildAgentDef,
   kimiAgentDef,

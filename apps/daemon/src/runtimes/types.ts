@@ -100,6 +100,11 @@ export type RuntimeAgentDef = {
     | 'opencode-env-content';
   installUrl?: string;
   docsUrl?: string;
+  // Fallback agent to try when this agent's binary is not available.
+  // Set to another registered agent id (e.g. 'nvidia-nim' for opencode).
+  // The daemon's startChatRun pipeline will attempt the fallback before
+  // emitting AGENT_UNAVAILABLE.
+  fallbackAgentId?: string;
 };
 
 export type DetectedAgent = Omit<

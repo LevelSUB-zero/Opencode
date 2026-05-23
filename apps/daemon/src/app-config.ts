@@ -147,6 +147,7 @@ const AGENT_CLI_ENV_KEYS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['kiro', new Set(['KIRO_BIN'])],
   ['kilo', new Set(['KILO_BIN'])],
   ['opencode', new Set(['OPENCODE_BIN'])],
+  ['nvidia-nim', new Set(['NVIDIA_NIM_API_KEY', 'NVIDIA_NIM_BASE_URL'])],
   ['pi', new Set(['PI_BIN'])],
   ['qoder', new Set(['QODER_BIN'])],
   ['qwen', new Set(['QWEN_BIN'])],

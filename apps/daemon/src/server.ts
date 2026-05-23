@@ -2341,6 +2341,26 @@ function isLoopbackPeerAddress(address) {
   return false;
 }
 
+function isSameOriginRequest(req) {
+  // Check the Origin header first (set by browsers on fetch/XHR calls).
+  const origin = req.get('origin');
+  if (typeof origin === 'string' && origin.length > 0) {
+    try {
+      const originUrl = new URL(origin);
+      if (originUrl.host === req.headers.host) return true;
+    } catch { /* ignore parse errors */ }
+  }
+  // Fall back to Referer for requests that omit Origin.
+  const referer = req.get('referer');
+  if (typeof referer === 'string' && referer.length > 0) {
+    try {
+      const refererUrl = new URL(referer);
+      if (refererUrl.host === req.headers.host) return true;
+    } catch { /* ignore parse errors */ }
+  }
+  return false;
+}
+
 function localOriginFromHeader(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -3194,6 +3214,12 @@ export async function startServer({
       // bearer; the loopback bypass exists for the localhost desktop
       // UI which has no proxy in the path.
       if (isLoopbackPeerAddress(req.socket?.remoteAddress)) return next();
+      // Same-origin short-circuit: when the daemon serves the frontend
+      // on the same origin (hosted deployments like HF Spaces), same-
+      // origin requests skip the bearer check. Cross-origin and direct
+      // API calls still require the token. We compare the Origin header
+      // against the Host header (which the reverse proxy preserves).
+      if (isSameOriginRequest(req)) return next();
       const auth = req.get('authorization') ?? '';
       const match = /^Bearer\s+(\S+)\s*$/i.exec(auth);
       if (!match || match[1] !== apiToken) {
@@ -7798,7 +7824,7 @@ export async function startServer({
 
   app.post('/api/projects/:id/deploy', async (req, res) => {
     try {
-      const { fileName, providerId = VERCEL_PROVIDER_ID, cloudflarePages } = req.body || {};
+      const { fileName, providerId = VERCEL_PROVIDER_ID, cloudflarePages, customDomain } = req.body || {};
       if (!isDeployProviderId(providerId)) {
         return sendApiError(
           res,
@@ -7839,6 +7865,7 @@ export async function startServer({
             config: await readDeployConfig(VERCEL_PROVIDER_ID),
             files,
             projectId: req.params.id,
+            customDomain,
           });
       const now = Date.now();
       /** @type {import('@open-design/contracts').DeployProjectFileResponse} */
@@ -7855,6 +7882,8 @@ export async function startServer({
         statusMessage: result.statusMessage,
         reachableAt: result.reachableAt,
         cloudflarePages: result.cloudflarePages,
+        customDomain: typeof customDomain === 'string' && customDomain.trim()
+          ? customDomain.trim() : prior?.customDomain,
         providerMetadata:
           providerId === CLOUDFLARE_PAGES_PROVIDER_ID
             ? (result.providerMetadata ?? cloudflarePagesDeploymentMetadata(cloudflarePagesProjectName))
@@ -9571,7 +9600,7 @@ export async function startServer({
   const startChatRun = async (chatBody, run) => {
     /** @type {Partial<ChatRequest> & { imagePaths?: string[] }} */
     chatBody = chatBody || {};
-    const {
+    let {
       agentId,
       message,
       currentPrompt,
@@ -9600,6 +9629,35 @@ export async function startServer({
     if (typeof clientRequestId === 'string' && clientRequestId)
       run.clientRequestId = clientRequestId;
     if (typeof agentId === 'string' && agentId) run.agentId = agentId;
+
+    // Fallback chain: if the primary agent's binary is not available and the
+    // agent defines a fallbackAgentId, silently switch before stashing state.
+    if (typeof agentId === 'string' && agentId) {
+      const primaryDef = getAgentDef(agentId);
+      if (primaryDef?.fallbackAgentId) {
+        try {
+          const cfg = await readAppConfig(RUNTIME_DATA_DIR);
+          const env = agentCliEnvForAgent(cfg.agentCliEnv, agentId);
+          const launch = resolveAgentLaunch(primaryDef, env);
+          if (!launch.launchPath || !launch.selectedPath) {
+            const fallbackId = primaryDef.fallbackAgentId;
+            const fbDef = getAgentDef(fallbackId);
+            if (fbDef && fbDef.bin) {
+              const fbEnv = agentCliEnvForAgent(cfg.agentCliEnv, fallbackId);
+              const fbLaunch = resolveAgentLaunch(fbDef, fbEnv);
+              if (fbLaunch.launchPath && fbLaunch.selectedPath) {
+                console.log(`[agent-fallback] "${agentId}" unavailable → "${fallbackId}"`);
+                agentId = fallbackId;
+                run.agentId = agentId;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[agent-fallback] resolution error:', err);
+        }
+      }
+    }
+
     // Stash the original user prompt + per-turn config so the
     // langfuse-bridge report path can include them without reaching back
     // into chatBody across the createChatRunService boundary. Each field
