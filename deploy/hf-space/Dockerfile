@@ -104,7 +104,7 @@ console.log('Patched: openProbePaths + origin-validation');
 
 mkdir -p /data/.od
 chown -R open-design:open-design /data/.od
-exec su -s /bin/sh open-design -c "HOME=/app node apps/daemon/dist/cli.js --no-open"
+exec su -s /bin/sh open-design -c "HOME=/data node apps/daemon/dist/cli.js --no-open"
 SCRIPT
 RUN chmod +x /entrypoint.sh
 
@@ -112,7 +112,6 @@ ENV NODE_ENV=production
 ENV NODE_OPTIONS=--max-old-space-size=384
 ENV OD_BIND_HOST=0.0.0.0
 ENV OD_PORT=7860
-ENV HOME=/app
 ENV OD_DATA_DIR=/data/.od
 
 EXPOSE 7860
