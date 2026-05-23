@@ -29,8 +29,11 @@ RUN apt-get update && apt-get install -y tini poppler-utils && rm -rf /var/lib/a
     addgroup --system --gid 1001 open-design && \
     adduser --system --no-create-home --shell /bin/sh --uid 1001 --ingroup open-design open-design
 
-# NVIDIA NIM is used as the primary agent (API-based, no CLI binary needed).
-# Set NVIDIA_NIM_API_KEY as a HF Space Secret for it to work.
+# Install opencode-ai CLI as the primary agent runtime. The daemon detects
+# the `opencode` binary on PATH and uses it for all chat runs.
+RUN npm install -g opencode-ai@1.14.39 && \
+    opencode --version && \
+    chmod -R a+rX /usr/local/lib/node_modules/opencode-ai
 
 WORKDIR /app
 COPY --from=build --chown=open-design:open-design /src/deploy/daemon ./apps/daemon
@@ -59,7 +62,7 @@ export OD_API_TOKEN=$(node -e "process.stdout.write(require('crypto').randomByte
 SPACE_SUBDOMAIN="${SPACE_SUBDOMAIN:-kratoszeus-design}"
 export OD_ALLOWED_ORIGINS="https://${SPACE_SUBDOMAIN}.hf.space"
 
-echo "NVIDIA NIM: API-based agent (no binary required)"
+echo "OpenCode: $(opencode --version 2>&1)"
 echo "Allowed origins: ${OD_ALLOWED_ORIGINS}"
 
 # Inject the API token into the frontend's index.html so all fetch calls
