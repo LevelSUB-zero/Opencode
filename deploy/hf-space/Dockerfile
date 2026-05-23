@@ -64,11 +64,22 @@ export OD_ALLOWED_ORIGINS="https://${SPACE_SUBDOMAIN}.hf.space"
 
 echo "OpenCode: $(opencode --version 2>&1)"
 
-# Write opencode-ai config from env vars (set as HF Space Secrets)
+# Write opencode-ai config with env-var substitution so the API key
+# is read from OPENCODE_API_KEY at runtime (set as HF Space Secret).
 if [ -n "$OPENCODE_API_KEY" ]; then
     mkdir -p /data/.config/opencode
-    node -e "require('fs').writeFileSync('/data/.config/opencode/opencode.json', JSON.stringify({apiKey: process.env.OPENCODE_API_KEY, provider: process.env.OPENCODE_PROVIDER || 'opencodezen'}))"
-    echo "OpenCode config written (provider: ${OPENCODE_PROVIDER:-opencodezen})"
+    cat > /data/.config/opencode/opencode.json << 'OPCONFIG'
+{
+  "provider": {
+    "opencodezen": {
+      "options": {
+        "apiKey": "{env:OPENCODE_API_KEY}"
+      }
+    }
+  }
+}
+OPCONFIG
+    echo "OpenCode config written (opencodezen)"
 fi
 
 echo "Allowed origins: ${OD_ALLOWED_ORIGINS}"
