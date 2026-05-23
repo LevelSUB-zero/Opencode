@@ -9998,7 +9998,7 @@ export async function startServer({
             ? `# Instructions${linkedDirsHint}\n\n---\n`
             : '',
       `# User request\n\n${userRequestPrompt}${attachmentHint}${commentHint}`,
-      safeImages.length
+      def.supportsImagePaths && safeImages.length
         ? `\n\n${safeImages.map((p) => `@${p}`).join(' ')}`
         : '',
     ].join('');
