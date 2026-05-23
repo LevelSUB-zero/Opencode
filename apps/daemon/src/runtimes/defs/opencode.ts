@@ -40,6 +40,8 @@ export const opencodeAgentDef = {
     promptViaStdin: true,
     streamFormat: 'json-event-stream',
     eventParser: 'opencode',
+    // If the opencode CLI binary is not found, fall back to NVIDIA NIM API.
+    fallbackAgentId: 'nvidia-nim',
     // OpenCode reads MCP servers from its layered config (global ~/.config
     // /opencode/opencode.json + project opencode.json + OPENCODE_CONFIG
     // + OPENCODE_CONFIG_CONTENT). The env-var form lets the daemon hand

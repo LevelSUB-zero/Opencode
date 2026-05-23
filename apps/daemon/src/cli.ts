@@ -210,6 +210,7 @@ const SUBCOMMAND_MAP = {
   ui: runUi,
   marketplace: runMarketplace,
   project: runProject,
+  deploy: runDeploy,
   automation: runAutomation,
   automations: runAutomation,
   memory: runMemory,
@@ -3675,6 +3676,69 @@ function safeReadJsonFile(p) {
   } catch {
     return null;
   }
+}
+
+const DEPLOY_STRING_FLAGS = new Set([
+  'file',
+  'domain',
+  'provider',
+  'daemon-url',
+]);
+const DEPLOY_BOOLEAN_FLAGS = new Set([
+  'help', 'h', 'json',
+]);
+
+async function runDeploy(args) {
+  const flags = parseFlags(args, { string: DEPLOY_STRING_FLAGS, boolean: DEPLOY_BOOLEAN_FLAGS });
+  if (flags.help || flags.h || args.length === 0) {
+    console.log(`Usage:
+  od deploy <project-id> [--file <name>] [--provider vercel-self|cloudflare-pages]
+                        [--domain <custom-domain>] [--json]
+
+Deploy a project file to Vercel or Cloudflare Pages.
+
+Arguments:
+  project-id                Project ID (required)
+  --file <name>             File to deploy (default: index.html)
+  --provider <id>           Deploy provider (vercel-self | cloudflare-pages)
+  --domain <domain>         Custom domain to assign (Vercel only)
+  --daemon-url <url>        Daemon HTTP base URL
+  --json                    Emit raw JSON
+  --help, -h                Show this help`);
+    process.exit(args.length === 0 ? 2 : 0);
+  }
+  const projectId = args.find((a) => !a.startsWith('-'));
+  if (!projectId) {
+    console.error('project-id is required');
+    process.exit(2);
+  }
+  const base = (await cliDaemonUrl(flags)).replace(/\/+$/, '');
+  const fileName = flags.file || 'index.html';
+  const providerId = flags.provider || 'vercel-self';
+  const body = { fileName, providerId };
+  if (typeof flags.domain === 'string' && flags.domain.trim()) {
+    body.customDomain = flags.domain.trim();
+  }
+  let resp;
+  try {
+    resp = await fetch(`${base}/api/projects/${encodeURIComponent(projectId)}/deploy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    surfaceFetchError(err, base);
+    process.exit(3);
+  }
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    console.error(`deploy failed: ${resp.status} ${JSON.stringify(data)}`);
+    process.exit(1);
+  }
+  if (flags.json) return writeJson(data);
+  console.log(`Deployed ${data.fileName} to ${data.providerId}`);
+  if (data.url) console.log(`URL:\t${data.url}`);
+  if (data.statusMessage) console.log(`Status:\t${data.statusMessage}`);
 }
 
 async function runProject(args) {

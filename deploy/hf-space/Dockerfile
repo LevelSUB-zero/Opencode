@@ -1,0 +1,119 @@
+# Open Design on Hugging Face Spaces
+#
+# To fork this with your own changes, replace the repo URL and ref below
+# with your own fork.
+
+ARG NODE_IMAGE=docker.io/library/node:24-slim
+
+FROM ${NODE_IMAGE} AS build
+
+RUN apt-get update && apt-get install -y git python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+RUN git clone --depth 1 --branch main \
+    https://github.com/nexu-io/open-design.git .
+
+RUN corepack enable && \
+    corepack prepare pnpm@10.33.2 --activate && \
+    pnpm install --frozen-lockfile
+
+RUN pnpm --filter @open-design/daemon build && \
+    pnpm --filter @open-design/web build && \
+    pnpm --filter @open-design/daemon deploy --legacy --prod /src/deploy/daemon && \
+    pnpm store prune && \
+    rm -rf /root/.cache /root/.local/share/pnpm/store
+
+FROM ${NODE_IMAGE}
+
+RUN apt-get update && apt-get install -y tini poppler-utils && rm -rf /var/lib/apt/lists/* && \
+    addgroup --system --gid 1001 open-design && \
+    adduser --system --no-create-home --shell /bin/sh --uid 1001 --ingroup open-design open-design
+
+# Install opencode CLI as the primary agent runtime for the daemon.
+RUN npm install -g opencode-ai@1.14.39 && \
+    opencode --version && \
+    chmod -R a+rX /usr/local/lib/node_modules/opencode-ai
+
+WORKDIR /app
+COPY --from=build --chown=open-design:open-design /src/deploy/daemon ./apps/daemon
+COPY --from=build --chown=open-design:open-design /src/apps/web/out ./apps/web/out
+COPY --from=build --chown=open-design:open-design /src/skills ./skills
+COPY --from=build --chown=open-design:open-design /src/design-systems ./design-systems
+COPY --from=build --chown=open-design:open-design /src/craft ./craft
+COPY --from=build --chown=open-design:open-design /src/prompt-templates ./prompt-templates
+COPY --from=build --chown=open-design:open-design /src/assets/frames ./assets/frames
+COPY --from=build --chown=open-design:open-design /src/assets/community-pets ./assets/community-pets
+COPY --from=build --chown=open-design:open-design /src/plugins/_official ./plugins/_official
+
+RUN mkdir -p /data/.od && chown -R open-design:open-design /data
+
+# Entrypoint: generate a runtime API token, inject it into the frontend so
+# API calls carry the Authorization header, fix /data volume permissions
+# (HF Spaces mounts the persistent volume at /data with root ownership),
+# then drop to the unprivileged open-design user and run the daemon.
+RUN cat > /entrypoint.sh << 'SCRIPT'
+#!/bin/sh
+set -e
+export OD_API_TOKEN=$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")
+
+# Verify opencode is on PATH and print version for diagnostics
+echo "Checking agent binaries..."
+if command -v opencode >/dev/null 2>&1; then
+  echo "opencode: $(opencode --version 2>&1)"
+else
+  echo "WARNING: opencode not found on PATH — agent runs will fail"
+fi
+
+# Inject the API token into the frontend's index.html so all fetch calls
+# to /api/* automatically include Authorization: Bearer <token>.
+node -e "
+var fs = require('fs');
+var token = process.env.OD_API_TOKEN;
+var html = fs.readFileSync('apps/web/out/index.html', 'utf8');
+var script = '<script>window.__OD_API_TOKEN=' + JSON.stringify(token) + ';(function(){var f=window.fetch;window.fetch=function(u,o){o=o||{};var s=typeof u===\"string\"?u:u.toString();if(s.startsWith(\"/api/\")){o.headers=o.headers||{};o.headers[\"Authorization\"]=\"Bearer \"+window.__OD_API_TOKEN}return f.call(window,u,o)}})()</script>';
+if (html.indexOf('</head>') !== -1) {
+  html = html.replace('</head>', script + '</head>');
+} else {
+  html = script + html;
+}
+fs.writeFileSync('apps/web/out/index.html', html);
+"
+
+# Patch the compiled server.js at startup:
+#   1) openProbePaths uses req.originalUrl (req.path is relative to /api mount)
+#   2) Add same-origin trust so the daemon-served frontend skips bearer check
+node -e "
+var fs = require('fs');
+var src = fs.readFileSync('apps/daemon/dist/server.js', 'utf8');
+// 1) Fix openProbePaths: TSC splits 'if(...)return next()' across two lines
+src = src.replace(
+  'if (openProbePaths.has(req.path))\n                return next();',
+  'if (openProbePaths.has(req.originalUrl))\n                return next();'
+);
+// 2) Insert isSameOriginRequest before isLoopbackPeerAddress
+var sameOriginFn = 'function isSameOriginRequest(req){var origin=req.get(\"origin\");if(typeof origin===\"string\"&&origin.length>0){try{var u=new URL(origin);if(u.host===req.headers.host)return true}catch{}}var referer=req.get(\"referer\");if(typeof referer===\"string\"&&referer.length>0){try{var u=new URL(referer);if(u.host===req.headers.host)return true}catch{}}return false}function isLoopbackPeerAddress(address) {';
+src = src.replace('function isLoopbackPeerAddress(address) {', sameOriginFn);
+// 3) Add same-origin bypass before 'const auth' (indented 12 spaces)
+src = src.replace(
+  '            if (isLoopbackPeerAddress(req.socket?.remoteAddress))\n                return next();\n            const auth',
+  '            if (isLoopbackPeerAddress(req.socket?.remoteAddress))\n                return next();\n            if (isSameOriginRequest(req))\n                return next();\n            const auth'
+);
+fs.writeFileSync('apps/daemon/dist/server.js', src);
+console.log('Patched server.js: openProbePaths + sameOrigin');
+"
+
+mkdir -p /data/.od
+chown -R open-design:open-design /data/.od
+exec su -s /bin/sh open-design -c "node apps/daemon/dist/cli.js --no-open"
+SCRIPT
+RUN chmod +x /entrypoint.sh
+
+ENV NODE_ENV=production
+ENV NODE_OPTIONS=--max-old-space-size=384
+ENV OD_BIND_HOST=0.0.0.0
+ENV OD_PORT=7860
+ENV OD_DATA_DIR=/data/.od
+
+EXPOSE 7860
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]

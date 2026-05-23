@@ -426,6 +426,7 @@ export interface DeploymentInfo {
   statusMessage?: string;
   reachableAt?: number;
   cloudflarePages?: CloudflarePagesDeploymentInfo;
+  customDomain?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -438,6 +439,7 @@ export interface DeployProjectFileRequest {
   fileName: string;
   providerId?: DeployProviderId;
   cloudflarePages?: CloudflarePagesDeploySelection;
+  customDomain?: string;
 }
 
 export interface DeployProjectFileResponse extends DeploymentInfo {}
