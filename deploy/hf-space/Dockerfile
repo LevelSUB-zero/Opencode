@@ -63,6 +63,14 @@ SPACE_SUBDOMAIN="${SPACE_SUBDOMAIN:-kratoszeus-design}"
 export OD_ALLOWED_ORIGINS="https://${SPACE_SUBDOMAIN}.hf.space"
 
 echo "OpenCode: $(opencode --version 2>&1)"
+
+# Write opencode-ai config from env vars (set as HF Space Secrets)
+if [ -n "$OPENCODE_API_KEY" ]; then
+    mkdir -p /data/.config/opencode
+    node -e "require('fs').writeFileSync('/data/.config/opencode/opencode.json', JSON.stringify({apiKey: process.env.OPENCODE_API_KEY, provider: process.env.OPENCODE_PROVIDER || 'opencodezen'}))"
+    echo "OpenCode config written (provider: ${OPENCODE_PROVIDER:-opencodezen})"
+fi
+
 echo "Allowed origins: ${OD_ALLOWED_ORIGINS}"
 
 # Inject the API token into the frontend's index.html so all fetch calls
