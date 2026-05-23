@@ -93,7 +93,7 @@ fs.writeFileSync('apps/daemon/dist/server.js', src);
 var ovSrc = fs.readFileSync('apps/daemon/dist/origin-validation.js', 'utf8');
 ovSrc = ovSrc.replace(
   'export function isLocalSameOrigin(req, port, env = process.env) {',
-  'export function isLocalSameOrigin(req, port, env = process.env) { var origin=headerValue(req.headers?.origin);if(typeof origin===\"string\"&&origin.length>0){try{var u=new URL(origin);if(u.host===req.headers.host)return true}catch{}}var ref=headerValue(req.headers?.referer);if(typeof ref===\"string\"&&ref.length>0){try{var u=new URL(ref);if(u.host===req.headers.host)return true}catch{}}'
+  'export function isLocalSameOrigin(req, port, env = process.env) { var _o=headerValue(req.headers?.origin);if(typeof _o===\"string\"&&_o.length>0){try{var u=new URL(_o);if(u.host===req.headers.host)return true}catch{}}var _r=headerValue(req.headers?.referer);if(typeof _r===\"string\"&&_r.length>0){try{var u=new URL(_r);if(u.host===req.headers.host)return true}catch{}}'
 );
 fs.writeFileSync('apps/daemon/dist/origin-validation.js', ovSrc);
 console.log('Patched: openProbePaths + origin-validation');
