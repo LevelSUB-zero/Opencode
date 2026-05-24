@@ -860,8 +860,6 @@ async function callLocalCli(provider, system, user, options) {
     );
     parseStdout = (raw) => extractJsonEventText(def.eventParser || def.id, raw, def.name);
   } else if (provider.agentId === 'opencode') {
-    const attachment = await writeLocalCliPromptAttachment(provider.agentId, prompt);
-    cleanupPromptAttachment = attachment.cleanup;
     args = def.buildArgs(
       '',
       [],
@@ -869,12 +867,6 @@ async function callLocalCli(provider, system, user, options) {
       { model: provider.model },
       { cwd },
     );
-    args.push(
-      '--file',
-      attachment.file,
-      'Read the attached OpenDesign memory extraction prompt and return strict JSON only.',
-    );
-    stdinText = '';
     parseStdout = (raw) => extractJsonEventText(def.eventParser || def.id, raw, def.name);
   } else {
     throw new Error(`Local CLI memory extraction is not supported for ${provider.agentId}`);
