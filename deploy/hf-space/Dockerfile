@@ -64,16 +64,17 @@ export OD_ALLOWED_ORIGINS="https://${SPACE_SUBDOMAIN}.hf.space"
 
 echo "OpenCode: $(opencode --version 2>&1)"
 
-# Write opencode-ai config with env-var substitution so the API key
-# is read from OPENCODE_API_KEY at runtime (set as HF Space Secret).
+# Write opencode-ai config with the actual API key (expanded from env var).
+# The {env:VAR} template syntax is not supported in all opencode modes,
+# so we write the resolved value directly.
 if [ -n "$OPENCODE_API_KEY" ]; then
     mkdir -p /data/.config/opencode
-    cat > /data/.config/opencode/opencode.json << 'OPCONFIG'
+    cat > /data/.config/opencode/opencode.json << OPCONFIG
 {
   "provider": {
     "opencodezen": {
       "options": {
-        "apiKey": "{env:OPENCODE_API_KEY}"
+        "apiKey": "$OPENCODE_API_KEY"
       }
     }
   }
@@ -121,9 +122,12 @@ fs.writeFileSync('apps/daemon/dist/origin-validation.js', ovSrc);
 console.log('Patched: openProbePaths + origin-validation');
 "
 
-mkdir -p /data/.od /data/.local/share/opencode
-chown -R open-design:open-design /data
-exec su -s /bin/sh open-design -c "HOME=/data node apps/daemon/dist/cli.js --no-open"
+# Clean up corrupted daemon database from previous crashed runs on HF volume
+rm -f /data/.od/app.sqlite /data/.od/app.sqlite-wal /data/.od/app.sqlite-shm
+
+mkdir -p /tmp/opencode /data/.od /data/.local/share/opencode
+chown -R open-design:open-design /tmp/opencode /data
+exec su -s /bin/sh open-design -c "HOME=/data XDG_DATA_HOME=/tmp node apps/daemon/dist/cli.js --no-open"
 SCRIPT
 RUN chmod +x /entrypoint.sh
 
