@@ -29,11 +29,12 @@ RUN apt-get update && apt-get install -y tini poppler-utils && rm -rf /var/lib/a
     addgroup --system --gid 1001 open-design && \
     adduser --system --no-create-home --shell /bin/sh --uid 1001 --ingroup open-design open-design
 
-# Install opencode-ai CLI as the primary agent runtime. The daemon detects
-# the `opencode` binary on PATH and uses it for all chat runs.
-RUN npm install -g opencode-ai@1.14.39 && \
+# Install Gemini CLI as primary + opencode-ai as fallback.
+# The daemon checks gemini before opencode in agent def order.
+RUN npm install -g @google/gemini-cli opencode-ai@1.14.39 && \
+    gemini --version && \
     opencode --version && \
-    chmod -R a+rX /usr/local/lib/node_modules/opencode-ai
+    chmod -R a+rX /usr/local/lib/node_modules/@google/gemini-cli /usr/local/lib/node_modules/opencode-ai
 
 WORKDIR /app
 COPY --from=build --chown=open-design:open-design /src/deploy/daemon ./apps/daemon
@@ -86,6 +87,9 @@ OPCONFIG
 OPAUTH
     echo "OpenCode config + auth written (opencodezen)"
 fi
+if [ -n "$GEMINI_API_KEY" ]; then
+    echo "Gemini CLI will use GEMINI_API_KEY env var for auth"
+fi
 
 # Determine the public origin URL for the isLocalSameOrigin bypass
 # HF Spaces sets SPACE_SUBDOMAIN (e.g. kratoszeus-design) and SPACE_ID
@@ -131,7 +135,7 @@ console.log('Patched: openProbePaths + origin-validation');
 "
 
 chown -R open-design:open-design /tmp/opencode /tmp/od-data /data
-exec su -s /bin/sh open-design -c "HOME=/data OPENCODE_API_KEY='$OPENCODE_API_KEY' XDG_DATA_HOME=/tmp OD_DATA_DIR=/tmp/od-data node apps/daemon/dist/cli.js --no-open"
+exec su -s /bin/sh open-design -c "HOME=/data OPENCODE_API_KEY='$OPENCODE_API_KEY' GEMINI_API_KEY='$GEMINI_API_KEY' XDG_DATA_HOME=/tmp OD_DATA_DIR=/tmp/od-data node apps/daemon/dist/cli.js --no-open"
 SCRIPT
 RUN chmod +x /entrypoint.sh
 
