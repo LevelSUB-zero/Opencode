@@ -57,16 +57,14 @@ RUN cat > /entrypoint.sh << 'SCRIPT'
 set -e
 export OD_API_TOKEN=$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")
 
-# Determine the public origin URL for the isLocalSameOrigin bypass
-# HF Spaces sets SPACE_SUBDOMAIN (e.g. kratoszeus-design) and SPACE_ID
-SPACE_SUBDOMAIN="${SPACE_SUBDOMAIN:-kratoszeus-design}"
-export OD_ALLOWED_ORIGINS="https://${SPACE_SUBDOMAIN}.hf.space"
-
 echo "OpenCode: $(opencode --version 2>&1)"
 
-# Write opencode-ai config with the actual API key (expanded from env var).
-# The {env:VAR} template syntax is not supported in all opencode modes,
-# so we write the resolved value directly.
+# Prep tmpfs dirs for daemon DB and opencode data (avoid SQLite I/O on HF volume)
+rm -rf /tmp/od-data /tmp/opencode
+mkdir -p /tmp/opencode /tmp/od-data /data/.od
+
+# Write opencode-ai config and auth. The {env:VAR} template for apiKey
+# has a known bug (#19946), so we use direct shell expansion.
 if [ -n "$OPENCODE_API_KEY" ]; then
     mkdir -p /data/.config/opencode
     cat > /data/.config/opencode/opencode.json << OPCONFIG
@@ -80,9 +78,19 @@ if [ -n "$OPENCODE_API_KEY" ]; then
   }
 }
 OPCONFIG
-    echo "OpenCode config written (opencodezen)"
+    # auth.json lives under XDG_DATA_HOME/opencode/ (XDG_DATA_HOME=/tmp)
+    cat > /tmp/opencode/auth.json << OPAUTH
+{
+  "opencodezen": "$OPENCODE_API_KEY"
+}
+OPAUTH
+    echo "OpenCode config + auth written (opencodezen)"
 fi
 
+# Determine the public origin URL for the isLocalSameOrigin bypass
+# HF Spaces sets SPACE_SUBDOMAIN (e.g. kratoszeus-design) and SPACE_ID
+SPACE_SUBDOMAIN="${SPACE_SUBDOMAIN:-kratoszeus-design}"
+export OD_ALLOWED_ORIGINS="https://${SPACE_SUBDOMAIN}.hf.space"
 echo "Allowed origins: ${OD_ALLOWED_ORIGINS}"
 
 # Inject the API token into the frontend's index.html so all fetch calls
@@ -122,12 +130,8 @@ fs.writeFileSync('apps/daemon/dist/origin-validation.js', ovSrc);
 console.log('Patched: openProbePaths + origin-validation');
 "
 
-# Clean up corrupted daemon database from previous crashed runs on HF volume
-rm -f /data/.od/app.sqlite /data/.od/app.sqlite-wal /data/.od/app.sqlite-shm
-
-mkdir -p /tmp/opencode /data/.od /data/.local/share/opencode
-chown -R open-design:open-design /tmp/opencode /data
-exec su -s /bin/sh open-design -c "HOME=/data XDG_DATA_HOME=/tmp node apps/daemon/dist/cli.js --no-open"
+chown -R open-design:open-design /tmp/opencode /tmp/od-data /data
+exec su -s /bin/sh open-design -c "HOME=/data OPENCODE_API_KEY='$OPENCODE_API_KEY' XDG_DATA_HOME=/tmp OD_DATA_DIR=/tmp/od-data node apps/daemon/dist/cli.js --no-open"
 SCRIPT
 RUN chmod +x /entrypoint.sh
 
@@ -135,7 +139,7 @@ ENV NODE_ENV=production
 ENV NODE_OPTIONS=--max-old-space-size=384
 ENV OD_BIND_HOST=0.0.0.0
 ENV OD_PORT=7860
-ENV OD_DATA_DIR=/data/.od
+ENV OD_DATA_DIR=/tmp/od-data
 
 EXPOSE 7860
 
